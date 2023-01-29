@@ -2,15 +2,14 @@
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const { MongoClient } = require('mongodb');
 require('dotenv').config();
-
-
+const bcrypt = require('bcryptjs');
 
 module.exports = function (app) {
 
   app.route('/api/stock-prices')
     .get(function (req, res){
-      let a, b, url1, url2, respObj, url1Data, url2Data, liked;
-
+      let a, b, url1, url2, respObj, url1Data, url2Data, liked, ip, ipSaved;
+      ip = bcrypt.hashSync(req.socket.remoteAddress, bcrypt.genSaltSync(12));
       liked = req.query.like;
 
       if (typeof req.query.stock === 'object') {
@@ -44,7 +43,7 @@ module.exports = function (app) {
         } 
 
         a = a.toUpperCase();
-        b = b.toUpperCase();
+        if (b) b = b.toUpperCase();
 
         // setup mongoDB
         const uri = process.env.DB;
@@ -62,20 +61,21 @@ module.exports = function (app) {
           
           if (liked == 'true') {
             // search for ip in DB
-            result1 = await client.db("fcc_stock_exercise").collection("IP").findOne({"IP": req.socket.remoteAddress});
-            //console.log('user IP found in db?? >> ', result1);
-            if (!result1) {
+            ipSaved = false;
+            await client.db("fcc_stock_exercise").collection("IP").find({}).forEach((el) => {
+              let x = bcrypt.compareSync(req.socket.remoteAddress, el.IP);
+              if (x) ipSaved = true;
+            });
+            if (!ipSaved) {
               // save IP in DB
-              ins1 = await client.db("fcc_stock_exercise").collection("IP").insertOne({"IP": req.socket.remoteAddress});
-              //console.log('not IP found, IP inserted >>> ', ins1);
+              ins1 = await client.db("fcc_stock_exercise").collection("IP").insertOne({"IP": ip});
               
               // Liked symbol increase +1 
               ins2 = await client.db("fcc_stock_exercise").collection("likes").updateOne({id: keyID[a]}, {$inc: {[a]: 1}});
-              //console.log('liked increased >>> ', ins2);
+
               if (b) {
                 // Liked second symbol increase +1
                 ins3 = await client.db("fcc_stock_exercise").collection("likes").updateOne({id: keyID[b]}, {$inc: {[b]: 1}});
-                //console.log('liked increased 2 >>>> ', ins3);
               }
             }
           } 
@@ -86,13 +86,13 @@ module.exports = function (app) {
           // find likes count for second symbol
           if (b) result3 = await client.db("fcc_stock_exercise").collection("likes").findOne({id: keyID[b]});
 
-          //console.log('the likes on 1 >>>> ', result2);
-          //console.log('the likes on 2 >>> ', result3);
-
-          // add likes count to data of first symbol
-          url1Data["likes"] = result2[a];
-          // add likes count to data of second symbol
-          if (b) url2Data["likes"] = result3[b];
+          // add likes or rel_likes count to data
+          if (b) {
+            url1Data['rel_likes'] = result2[a] - result3[b];
+            url2Data['rel_likes'] = result3[b] - result2[a];
+          } else {
+            url1Data["likes"] = result2[a];
+          }
 
           // prepare the response object
           if (b) {
@@ -114,7 +114,3 @@ module.exports = function (app) {
     });
     
 };
-
-// TODO: 
-// 1) change likes for rel_likes if (b)
-// 2) anonymize IP 

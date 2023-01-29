@@ -6,6 +6,7 @@
 		"start": "node server.js"
 	},
 	"dependencies": {
+		"bcryptjs": "^2.4.3",
 		"body-parser": "^1.15.2",
 		"chai": "^4.2.0",
 		"chai-http": "^4.3.0",
